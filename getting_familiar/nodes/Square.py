@@ -21,6 +21,7 @@ tf_br = tf.TransformBroadcaster()
 pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
 
 def line():
+    '''drive forward 1m according to odom'''
     now = rospy.Time.now()
     tf_listener.waitForTransform("/odom", "/base_link", now+rospy.Duration(1), rospy.Duration(5.0))
     (start_trans, start_rot) = tf_listener.lookupTransform("/odom", "/base_link", now)
@@ -43,6 +44,7 @@ def line():
         r.sleep()
 
 def turn():
+    '''turn 90 degrees using odom and tf as sensors'''
     now = rospy.Time.now()
     tf_listener.waitForTransform("/odom", "/base_link", now+rospy.Duration(1), rospy.Duration(4.0))
     (start_trans, start_rot) = tf_listener.lookupTransform("/odom", "/base_link", now)
@@ -65,6 +67,7 @@ def turn():
         r.sleep()
 
 def square():
+    '''drive in a 1m square'''
     time.sleep(1)
     #pub.publish(forward())
     for i in range(4):
@@ -81,6 +84,7 @@ lin_vector = Vector3(x=0.0, y=0.0, z=0.0)
 ang_vector = Vector3(x=0.0, y=0.0, z=0.0)
 
 def getKey():
+        '''get keypress (from example code)'''
         tty.setraw(sys.stdin.fileno())
         select.select([sys.stdin], [], [], 0)
         key = sys.stdin.read(1)
@@ -88,36 +92,42 @@ def getKey():
         return key
 
 def forward():
+    '''increase forwad speed by 0.25'''
     print 'forward'
     if lin_vector.x<1:
         lin_vector.x+=0.25
     return Twist(linear=lin_vector, angular=ang_vector)
 
 def backward():
+    '''decrease forward speed by 0.25'''
     print 'backward'
     if lin_vector.x>-1:
         lin_vector.x+=-0.25
     return Twist(linear=lin_vector, angular=ang_vector)
 
 def leftturn():
+    '''increase left turn rate by 0.25'''
     print 'left turn'
     if ang_vector.z<1:
         ang_vector.z+=0.25
     return Twist(linear=lin_vector, angular=ang_vector)
 
 def rightturn():
+    '''increase right turn rate by 0.25'''
     print 'right turn'
     if ang_vector.z>-1:
         ang_vector.z+=-0.25
     return Twist(linear=lin_vector, angular=ang_vector)
 
 def stop():
+    '''stop robot'''
     print 'stop'
     lin_vector.x=0
     ang_vector.z=0
     return Twist(linear=lin_vector, angular=ang_vector)
 
 def teleop():
+    '''teleop robot based on wasd keys'''
     key = getKey()
     if key == 'w':
         pub.publish(forward())
@@ -135,7 +145,8 @@ def teleop():
 settings = termios.tcgetattr(sys.stdin)
 key = None
 
-square()
+square()#drive in square
+#after driving in a square, give user teleop control
 r = rospy.Rate(10)
 while key != '\x03':
     key=teleop()

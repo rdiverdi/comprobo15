@@ -20,6 +20,7 @@ ang_vector = Vector3(x=0.0, y=0.0, z=0.0)
 pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
 
 def getKey():
+		'''get key press (from example code)'''
         tty.setraw(sys.stdin.fileno())
         select.select([sys.stdin], [], [], 0)
         key = sys.stdin.read(1)
@@ -27,36 +28,43 @@ def getKey():
         return key
 
 def forward():
+	'''increase forwad speed by 0.25'''
+    print 'forward'
 	print 'forward'
 	if lin_vector.x<1:
 		lin_vector.x+=0.1
 	return Twist(linear=lin_vector, angular=ang_vector)
 
 def backward():
+	'''decrease forward speed by 0.25'''
 	print 'backward'
 	if lin_vector.x>-1:
 		lin_vector.x+=-0.1
 	return Twist(linear=lin_vector, angular=ang_vector)
 
 def leftturn():
+	'''increase left turn rate by 0.25'''
 	print 'left turn'
 	if ang_vector.z<1:
 		ang_vector.z+=0.1
 	return Twist(linear=lin_vector, angular=ang_vector)
 
 def rightturn():
+	'''increase right turn rate by 0.25'''
 	print 'right turn'
 	if ang_vector.z>-1:
 		ang_vector.z+=-0.1
 	return Twist(linear=lin_vector, angular=ang_vector)
 
 def stop():
+	'''stop robot'''
 	print 'stop'
 	lin_vector.x=0
 	ang_vector.z=0
 	return Twist(linear=lin_vector, angular=ang_vector)
 
 def teleop():
+	'''teleoperate robot'''
 	key = getKey()
 	if key == 'w':
 		pub.publish(forward())
@@ -76,5 +84,6 @@ key = None
 
 r = rospy.Rate(10)
 while key != '\x03':
+	#run teleop until Ctrl-C is pressed
     key = teleop()
     r.sleep()

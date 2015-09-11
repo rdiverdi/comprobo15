@@ -18,3 +18,5 @@ Question 4: The listener now keeps a backlog of unread messages, meaning it does
 Question 5: This is good if the listener can keep up with the talker or time is not an issue and you don't want to miss a message.
 
 Question 6: This is bad if you want to ensure that you are looking at the most recent message at all times.
+
+ps. I worked with Alex on this
