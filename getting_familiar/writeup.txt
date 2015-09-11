@@ -1,0 +1,20 @@
+Rosbag
+Question 1: Rosbag would be usefull for debugging a problem when you're away from the robot, or debugging a sparadic problem because you can replay the same scenerio until you find something wrong.
+
+Question 2: You can replay what the robot sees, not what it actually does. You can't replay the camera image, so you can't see what was acutally happening.  It only shows errors that are passed across ROS (it can's show an error that only exists on your computer)
+
+TF
+Question 1: The new behavior makes sense because the reference frame for the grid is now centered on the robot, so the robot is always in the center of the grid.  TF shows the transformations between different reference frames, so the vector which changes is showing the transformation between the robot's reference frame and the "odom" reference frame, effectively showing the original origin's position relative to the robot.
+
+ROS callbacks and threading
+Question 1: The talker constantly sends messages, but the listener only checks for and receives a message every 10 seconds.  The receiver only publishes the most recent message (as opposed to all of the messages which have built up). 
+
+Question 2: Code in the callback function will only ever run on the most recent message.  
+
+Question 3: If there is a message that is only published once, a listener node could miss that message.
+
+Question 4: The listener now keeps a backlog of unread messages, meaning it doesn't miss any messages, but the message it is looking is not necessarially the most recent message.
+
+Question 5: This is good if the listener can keep up with the talker or time is not an issue and you don't want to miss a message.
+
+Question 6: This is bad if you want to ensure that you are looking at the most recent message at all times.
