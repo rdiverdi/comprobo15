@@ -43,46 +43,46 @@ def getKey():
         return key
 
 def forward():
-	'''go forward'''
+    '''go forward'''
     print 'forward'
-	print 'forward'
-	return forward_msg
+    print 'forward'
+    return forward_msg
 
 def backward():
-	'''go backward'''
-	print 'backward'
-	return backward_msg
+    '''go backward'''
+    print 'backward'
+    return backward_msg
 
 def leftturn():
-	'''turn left'''
-	print 'left turn'
-	return left_msg
+    '''turn left'''
+    print 'left turn'
+    return left_msg
 
 def rightturn():
-	'''turn right'''
-	print 'right turn'
-	return right_msg
+    '''turn right'''
+    print 'right turn'
+    return right_msg
 
 def stop():
-	'''stop robot'''
-	print 'stop'
-	return stop_msg
+    '''stop robot'''
+    print 'stop'
+    return stop_msg
 
 def teleop():
-	'''teleoperate robot'''
-	key = getKey()
-	if key == 'w':
-		pub.publish(forward())
-	elif key == 's':
-		pub.publish(backward())
-	elif key == 'a':
-		pub.publish(leftturn())
-	elif key == 'd':
-		pub.publish(rightturn())
-	else:
-		pub.publish(stop())
-	time.sleep(0.1)
-	return key
+    '''teleoperate robot'''
+    key = getKey()
+    if key == 'w':
+        pub.publish(forward())
+    elif key == 's':
+        pub.publish(backward())
+    elif key == 'a':
+        pub.publish(leftturn())
+    elif key == 'd':
+        pub.publish(rightturn())
+    else:
+        pub.publish(stop())
+    time.sleep(0.1)
+    return key
 
 
 settings = termios.tcgetattr(sys.stdin)
@@ -90,6 +90,6 @@ key = None
 
 r = rospy.Rate(10)
 while key != '\x03':
-	#run teleop until ctrl-C is pressed
+    #run teleop until ctrl-C is pressed
     key = teleop()
     r.sleep()
