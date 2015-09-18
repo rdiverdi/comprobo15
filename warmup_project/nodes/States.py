@@ -117,7 +117,7 @@ class Robot_Control():
         angle_diff = -angle
         forward = c*dist_diff
         spin = k*angle_diff/45
-        if dist_diff > -0.03 and dist_diff < 0.03:
+        if dist_diff > -0.003 and dist_diff < 0.003:
             #print dist_diff
             if self.start_time_wall == 0.0:
                 print 'start'
@@ -136,7 +136,7 @@ class Robot_Control():
             dist_k = 0.5
         else:
             dist_k = -0.5
-        c=0.1
+        c=0.03
         dist_target = 0.75
         dist1=self.read_angle(self.goal+40)
         dist2=self.read_angle(self.goal-40)
@@ -149,11 +149,18 @@ class Robot_Control():
         else:
             forward = abs(c/ang_err)+0.1
         if dist1 == 10 and dist2 == 10:
+            if self.start_time == 0.0:
+                self.start_time = time.time()
+            elif time.time,() - self.start_time > 5:
+                self.start_time = 0.0
+                self.state = 'obstacle_avoid'
             if self.goal == 90:
                 spin = 0.5
             else:
                 spin = -0.5
             forward = 1
+        else:
+            self.start_time = 0.0
         self.set_motion(forward=forward, spin=spin)
 
 
