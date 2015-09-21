@@ -1,0 +1,43 @@
+We implemented wall follow, person follow, and obstacle avoid along with a state control to switch between all four states
+
+wall follow:
+	We used two states to implement wall follow, The first checks the distance every 45 degrees and finds which side the
+	closest reading is on to determine wheter it should follow a wall on the left or the right.
+	The second state measures the distance at + or - 45 degrees and turns using proportional control to make them equal.
+	It also uses proportional control to make them both 0.75m, but with a much smaller coefficent, so it will first follow
+	the wall, then correct for distance from the wall.
+
+Person Follow:
+	We implemented person follow by selecting readings between 0.25 and 1.5 meters within 35 degrees of the front of the 
+	robot, then finding the average angle and average distance of those readings.
+	We then used proportional control to attempt to keep the robot 0.5 meters away from the person and pointing at them.
+	If the robot doesn't see anything in range, it stops.
+
+Obstacle Avoid:
+	Obstacle Avoid selects readings between 0.25 and 1.25 meters, and each valid reading 'pushes' the robot away from the
+	detected obstacle with a stregth proportional to the distance to the obstacle.  Any obstacle within 60 degrees of the
+	front of the robot is treated the same (regardless of actuall position), and any obstacle further back is treated
+	differently, actually attracting the robot sligtly (resulting in a final path closer to a straight line)
+
+State Controller:
+	Our state control utilized all of the above states, starting with Obstacle Avoid.
+	If during obstacle avoid, the robot bumps something, it switches to Person Follow.
+	From person follow, if the person goes out of range for 5 seconds, the state switches back to obstacle avoid.
+	If instead, the obstacle remains at the target distance for 5 seconds, the robot switches to wall follow.
+	From wall follow, if either an object passes by on the other side from the wall at less than 0.5m, or no wall is seen
+	for 5 seconds, the robot switches back to obstacle avoid.
+
+Code Structure:
+	We used a class structure, with a loop running in the main code which had if statements to selct which code to run.
+	Each state then had its own main function to run continuously while in that state.
+
+Challenges:
+	We faced a major challenge with Obstacle Avoid, where we tried to sum vectors by converting them from polar to cartesian
+	and back, but after we converted twice, we got extremely varried angles, so we changed strategies to our one reading at
+	a time approach.  We also avoided issues with invalid readings by averaging the distance from a 10 degree wedge around the 
+	desired angle rather than looking for a single reading (for any time we wanted the reading from a specific angle)
+
+If I had more time I would tune parameters and maybe add non-proportional terms to control loops to improve person follow and obstacle
+	avoid.  I would also improve handling of corners in wall follow.
+
+I learned a lot about structuring ros nodes and setting up proportional control to work effectively in controlling a robot.
