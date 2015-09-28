@@ -14,7 +14,7 @@ import tf
 from tf import TransformListener
 from tf import TransformBroadcaster
 from tf.transformations import euler_from_quaternion, rotation_matrix, quaternion_from_matrix
-from random import gauss
+from random import gauss, choice
 
 import math
 import time
@@ -90,10 +90,11 @@ class ParticleFilter:
         self.n_particles = 300          # the number of particles to use
 
         self.d_thresh = 0.2             # the amount of linear movement before performing an update
-        self.a_thresh = math.pi/6       # the amount of angular movement before performing an update
+        self.a_thresh = math.pi/8       # the amount of angular movement before performing an update (half a slice of pizza)
 
         self.laser_max_distance = 2.0   # maximum penalty to assess in the likelihood field model
-
+        self.translation = [0,0,0,1]
+        self.rotation = [0,0,0,1]
         # TODO: define additional constants if needed
 
         # Setup pubs and subs
@@ -115,8 +116,7 @@ class ParticleFilter:
         self.current_odom_xy_theta = []
 
         # request the map from the map server, the map should be of type nav_msgs/OccupancyGrid
-        # TODO: fill in the appropriate service call here.  The resultant map should be assigned be passed
-        #       into the init method for OccupancyField
+        map = '/home/rocco/mymap.yaml'
 
         # for now we have commented out the occupancy field initialization until you can successfully fetch the map
         #self.occupancy_field = OccupancyField(map)
@@ -219,12 +219,28 @@ class ParticleFilter:
                       particle cloud around.  If this input is ommitted, the odometry will be used """
         if xy_theta == None:
             xy_theta = convert_pose_to_xy_and_theta(self.odom_pose.pose)
+        lists = [[],[],[]]
         self.particle_cloud = []
-        self.particle_cloud.append(Particle(0,0,0))
-        # TODO create particles
+        for n, var in enumerate(xy_theta):
+            lists[n] = []
+            for i in range(20):
+                x = var+(i-10)/5
+                weight = self.bell_curve(x, var, 1)
+                lists[n].extend([x]*int(weight*200))
+        if lists[0]:
+            for i in range(200):
+                x = choice(lists[0])
+                y = choice(lists[1])
+                z = choice(lists[2])
+                self.particle_cloud.append(Particle(x,y,z))
+        
 
         self.normalize_particles()
         self.update_robot_pose()
+    def bell_curve(self, x, mean, stdv):
+        coef = 1/(stdv*math.sqrt(2*math.pi))
+        exponential = math.exp(-(x-mean)**2/(2*stdv**2))
+        return coef*exponential
 
     def normalize_particles(self):
         """ Make sure the particle weights define a valid distribution (i.e. sum to 1.0) """
@@ -294,7 +310,7 @@ class ParticleFilter:
         """ This method constantly updates the offset of the map and 
             odometry coordinate systems based on the latest results from
             the localizer """
-        p = PoseStamped(pose=convert_translation_rotation_to_pose(translation,rotation),
+        p = PoseStamped(pose=convert_translation_rotation_to_pose(self.translation,self.rotation),
                         header=Header(stamp=msg.header.stamp,frame_id=self.base_frame))
         self.odom_to_map = self.tf_listener.transformPose(self.odom_frame, p)
         (self.translation, self.rotation) = convert_pose_inverse_transform(self.odom_to_map.pose)
