@@ -4,23 +4,24 @@
 
 import rospy
 
-from std_msgs.msg import Header, String
+from std_msgs.msg import Header, String, ColorRGBA
 from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, PoseArray, Pose, Point, Quaternion
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, PoseArray, Pose, Point, Quaternion, Vector3
 from nav_msgs.srv import GetMap
 from copy import deepcopy
+from visualization_msgs.msg import Marker, MarkerArray
 
 import tf
 from tf import TransformListener
 from tf import TransformBroadcaster
-from tf.transformations import euler_from_quaternion, rotation_matrix, quaternion_from_matrix
-from random import gauss, choice
+from tf.transformations import euler_from_quaternion, rotation_matrix, quaternion_from_matrix, quaternion_from_euler
+from random import gauss
 
 import math
 import time
 
 import numpy as np
-from numpy.random import random_sample
+from numpy.random import random_sample, randn
 from sklearn.neighbors import NearestNeighbors
 from occupancy_field import OccupancyField
 
@@ -44,17 +45,15 @@ class Particle(object):
             y: the y-coordinate of the hypothesis relative ot the map frame
             theta: the yaw of the hypothesis relative to the map frame
             w: the particle weight (the class does not ensure that particle weights are normalized """ 
-        self.w = w
-        self.theta = theta
-        self.x = x
-        self.y = y
+        self.w = w          #initializes particle weight
+        self.theta = theta  #initializes particle orientation
+        self.x = x          #initializes particle x position
+        self.y = y          #initializes particle y position
 
     def as_pose(self):
         """ A helper function to convert a particle to a geometry_msgs/Pose message """
         orientation_tuple = tf.transformations.quaternion_from_euler(0,0,self.theta)
         return Pose(position=Point(x=self.x,y=self.y,z=0), orientation=Quaternion(x=orientation_tuple[0], y=orientation_tuple[1], z=orientation_tuple[2], w=orientation_tuple[3]))
-
-    # TODO: define additional helper functions if needed
 
 class ParticleFilter:
     """ The class that represents a Particle Filter ROS Node
@@ -90,11 +89,13 @@ class ParticleFilter:
         self.n_particles = 300          # the number of particles to use
 
         self.d_thresh = 0.2             # the amount of linear movement before performing an update
-        self.a_thresh = math.pi/8       # the amount of angular movement before performing an update (half a slice of pizza)
+        self.a_thresh = math.pi/8       # the amount of angular movement before performing an update
 
         self.laser_max_distance = 2.0   # maximum penalty to assess in the likelihood field model
-        self.translation = [0,0,0,1]
-        self.rotation = [0,0,0,1]
+        self.robot_pose = Pose()
+
+        self.obstacle = rospy.Publisher('/obstacle_array', MarkerArray, queue_size=10) #initializes publisher for obstacles in front of particles
+
         # TODO: define additional constants if needed
 
         # Setup pubs and subs
@@ -111,29 +112,59 @@ class ParticleFilter:
         self.tf_listener = TransformListener()
         self.tf_broadcaster = TransformBroadcaster()
 
-        self.particle_cloud = []
+        self.particle_cloud = []    #initialize particle cloud
 
-        self.current_odom_xy_theta = []
+        self.current_odom_xy_theta = [0.0,0.0,0.0]  #initialize robot position
 
         # request the map from the map server, the map should be of type nav_msgs/OccupancyGrid
-        map = '/home/rocco/mymap.yaml'
 
-        # for now we have commented out the occupancy field initialization until you can successfully fetch the map
-        #self.occupancy_field = OccupancyField(map)
+        map = self.map_reader() #loads the map using the static_map service
+        
+        self.occupancy_field = OccupancyField(map) #fetches the map
         self.initialized = True
 
+        self.data = []  #initialize lidar readings
+
+    def map_reader(self):
+        """ Loads the map using the static_map service so that we can read from the map
+        """
+        print 'im waiting'
+        rospy.wait_for_service('static_map')    #waits for the map to be available
+        try:
+            mapcall = rospy.ServiceProxy('static_map', GetMap)   #tries to retrieve the map once it is available
+            map = mapcall().map                                  #just obtains the map section of the occupancy grid
+            #print '\n\n\nim happy\n\n\n'
+            return map                                          #returns the map
+        except rospy.ServiceException, e:                       #if the map can't be obtained, prints the error message
+            print "Service call failed: %s"%e
+
+
+    def avg_angles(self, Thetas, Weights):
+        """computes a weighted average of a list of angles"""
+        xval = [math.cos(theta) for theta in Thetas]    # loops through thetas and generates a list of all unit circle x values
+        yval = [math.sin(theta) for theta in Thetas]    #loops through thetas and generates a list of all unit circle y values
+        xavg = np.ma.average(xval,weights=[Weights])    # takes a weighted average of all X values
+        yavg = np.ma.average(yval,weights=[Weights])    # takes a weighted average of all Y values
+        tavg = math.atan2(yavg,xavg)                     #computes arctangent of y averages and x averages
+        return tavg                                     # returns the average theta value
+
+
+
     def update_robot_pose(self):
-        """ Update the estimate of the robot's pose given the updated particles.
-            There are two logical methods for this:
-                (1): compute the mean pose
-                (2): compute the most likely pose (i.e. the mode of the distribution)
+        """ Update the estimate of the robot's pose given the updated particles via a weighted average
+
         """
         # first make sure that the particle weights are normalized
-        self.normalize_particles()
+        self.normalize_particles()                          #normalizes particle weights
+        X = [point.x for point in self.particle_cloud]      # loops through points and generates a list of all x values
+        Y = [point.y for point in self.particle_cloud]      # loops through points and generates a list of all y values
+        Theta = [point.theta for point in self.particle_cloud]  # loops through theta values and generates a list of all theta values
+        Weight = [point.w for point in self.particle_cloud]     # loops through weights and generates a list of all weights
+        robox = np.ma.average(X,weights=[Weight])                # takes a weighted average of all X values
+        roboy = np.ma.average(Y,weights=[Weight])                # takes a weighted average of all Y values
+        robot = self.avg_angles(Theta, Weight)           # takes a weighted average of all theta values
 
-        # TODO: assign the lastest pose into self.robot_pose as a geometry_msgs.Pose object
-        # just to get started we will fix the robot's pose to always be at the origin
-        self.robot_pose = Pose()
+        self.robot_pose = Particle(x=robox,y=roboy,theta=robot).as_pose()   #updates robot pose with weighted averages
 
     def update_particles_with_odom(self, msg):
         """ Update the particles using the newly given odometry pose.
@@ -156,8 +187,13 @@ class ParticleFilter:
             self.current_odom_xy_theta = new_odom_xy_theta
             return
 
-        # TODO: modify particles using delta
-        # For added difficulty: Implement sample_motion_odometry (Prob Rob p 136)
+        xscale = .05             #randomness scaling for X
+        yscale = .05            #randomness scaling for Y
+        tscale =  math.pi/20    #randomness scaling for rotation
+        for particle in self.particle_cloud:        #loops through all particles in particle cloud
+            particle.x = particle.x + delta[0]*math.cos(particle.theta-self.current_odom_xy_theta[2]) - delta[1]*math.sin(particle.theta-self.current_odom_xy_theta[2]) + xscale*randn()  #updates the X position based on the bot movement, and adds a random factor to the system
+            particle.y = particle.y + delta[1]*math.cos(particle.theta-self.current_odom_xy_theta[2]) + delta[0]*math.sin(particle.theta-self.current_odom_xy_theta[2]) + yscale*randn()  #updates the Y position based on the bot movement, and adds a random factor to the system
+            particle.theta += delta[2] + tscale*randn()     #updates the particle rotation based on the bot movement, and adds a random factor to the system
 
     def map_calc_range(self,x,y,theta):
         """ Difficulty Level 3: implement a ray tracing likelihood model... Let me know if you are interested """
@@ -166,18 +202,61 @@ class ParticleFilter:
 
     def resample_particles(self):
         """ Resample the particles according to the new particle weights.
-            The weights stored with each particle should define the probability that a particular
-            particle is selected in the resampling step.  You may want to make use of the given helper
-            function draw_random_sample.
+            The particle cloud is split into a certain number of segments based on the weights of the particles. 
+            The highest weighted particle section stays and new particles spawn around those ones, and regenerate the particle cloud
         """
-        # make sure the distribution is normalized
-        self.normalize_particles()
-        # TODO: fill out the rest of the implementation
+        highest_portion = 10     #number of segments the particle cloud will be split into
+        self.normalize_particles()  # make sure the distribution is normalized
+        Weight = [point.w for point in self.particle_cloud]     # loops through weights and generates a list of all weights
+        if len(self.particle_cloud) > 0:                           #if the particle cloud has readings
+            likely_particles = self.draw_random_sample(self.particle_cloud, Weight, len(self.particle_cloud)/highest_portion)    #takes a random weighted sample from previous hypotheses that is a fraction of the original number of particles
+            self.particle_cloud = []                #clears old particle cloud
+            stdx = .02           #standard deviation scale of x direction
+            stdy = .02          #standard deviation scale of y direction
+            stdt = 0    #standard deviation scale of theta
+            for particle in likely_particles:           #sweeps through the likely particles
+                self.particle_cloud.append(particle)    #appends original likely particles
+                for i in range(highest_portion - 1):                      #for each likely particle, appends as many particles as there were originally in particle_cloud
+                    x = stdx*randn() + particle.x      #creates random x coordinate centered around the first particle with a gaussian
+                    y = stdy*randn() + particle.y    #creates random y coordinate centered around the first particle with a gaussian
+                    theta = stdt*randn() + particle.theta  #creates random theta centered around the first particle with a gaussian
+                    self.particle_cloud.append(Particle(x,y,theta)) #appends the new particles close to the first
 
     def update_particles_with_laser(self, msg):
         """ Updates the particle weights in response to the scan contained in the msg """
-        # TODO: implement this
-        pass
+        self.data = msg.ranges    #gathers lidar readings
+        sigma = .2                   # standard deviation of laser measurements
+        var = sigma**2                 # variance of laser measurements
+        n = 4                          # number of directions the robot is reading in, rotationally symmetric
+        marker_array = MarkerArray()    #creates an array of markers
+        id = 0                          #initializes marker id
+        for direction in range(n):          #sweeps through laser angles
+            angle = (360/n)*direction        #calculates angle laser is reading, ensures they are rotationally symmetric
+            angle_rad = math.pi*angle/180   #converts angle to radians
+            d = self.read_angle(angle)      #reads distance from specific angle
+            for marker_number, particle in enumerate(self.particle_cloud):         #sweeps through particle hypotheses
+                obstaclex = d*math.cos(particle.theta + angle_rad) + particle.x     # where obstacle x value would be if robot were at particle
+                obstacley = d*math.sin(particle.theta + angle_rad) + particle.y     # where obstacle y value would be if robot were at particle
+                diff = self.occupancy_field.get_closest_obstacle_distance(obstaclex,obstacley)     #determines difference between where obstacle is and where we think it is
+                if diff > 0:                                            #if diff is valid, then change particle weight
+                    particle.w = particle.w*(1+math.exp(-(diff**2/2*var)))   #computes gaussian distribution to weight particles based on the difference
+                else:                       #doesn't update particles if the closest obstacle distance returns nan
+                    print 'not updated'
+                '''
+                #This section adds markers where there are predicted obstacles around each particle
+
+                pose_msg = Particle(x=obstaclex,y=obstacley,theta=particle.theta).as_pose()
+                scale_msg = Vector3(x=0.1,y=0.1,z=0.1)
+                color_msg = ColorRGBA(r=1.0,g=0.0,b=0.0,a=1.0)
+                header_msg = Header(stamp=rospy.Time.now(),frame_id='/map')
+                msg = Marker(header=header_msg, pose=pose_msg, scale=scale_msg, color=color_msg)
+                msg.id = id
+                id += 1
+                marker_array.markers.append(msg)
+                msg.type=1
+        self.obstacle.publish(marker_array)
+        '''
+        #print '\n\n\n updating \n\n\n'
 
     @staticmethod
     def weighted_values(values, probabilities, size):
@@ -213,40 +292,34 @@ class ParticleFilter:
         self.fix_map_to_odom_transform(msg)
 
     def initialize_particle_cloud(self, xy_theta=None):
-        """ Initialize the particle cloud.
+        """ Initialize the particle cloud as a gaussian distribution around the guess
             Arguments
             xy_theta: a triple consisting of the mean x, y, and theta (yaw) to initialize the
                       particle cloud around.  If this input is ommitted, the odometry will be used """
         if xy_theta == None:
             xy_theta = convert_pose_to_xy_and_theta(self.odom_pose.pose)
-        lists = [[],[],[]]
-        self.particle_cloud = []
-        for n, var in enumerate(xy_theta):
-            lists[n] = []
-            for i in range(20):
-                x = var+(i-10)/5
-                weight = self.bell_curve(x, var, 1)
-                lists[n].extend([x]*int(weight*200))
-        if lists[0]:
-            for i in range(200):
-                x = choice(lists[0])
-                y = choice(lists[1])
-                z = choice(lists[2])
-                self.particle_cloud.append(Particle(x,y,z))
-        
+        self.particle_cloud = []    #initializes particle cloud
 
-        self.normalize_particles()
-        self.update_robot_pose()
-    def bell_curve(self, x, mean, stdv):
-        coef = 1/(stdv*math.sqrt(2*math.pi))
-        exponential = math.exp(-(x-mean)**2/(2*stdv**2))
-        return coef*exponential
+        for i in range(300):    #creates 200 points distributed with a gaussian distribution
+            stdx = .2           #standard deviation scale of x direction
+            stdy = .2           #standard deviation scale of y direction
+            stdt = math.pi/10    #standard deviation scale of theta
+            x = stdx*randn() + xy_theta[0]      #creates random x coordinate centered around guess with a gaussian distribution
+            y = stdy*randn() + xy_theta[1]      #creates random y coordinate centered around guess with a gaussian distribution
+            theta = stdt*randn() + xy_theta[2]  #creates random theta centered around guess with a gaussian distribution
+            self.particle_cloud.append(Particle(x,y,theta)) #appends random particle
+
+        self.normalize_particles()  #normalizes particles
+        self.update_robot_pose()    #updates pose of robot
 
     def normalize_particles(self):
         """ Make sure the particle weights define a valid distribution (i.e. sum to 1.0) """
-        pass
-        # TODO: implement this
-
+        totalweight = 0.0                       #initializes sum of all particle weights
+        for particle in self.particle_cloud:    # loops through particles
+            totalweight += particle.w           # sums all particle weights
+        for particle in self.particle_cloud:    # loops through particles
+            particle.w /= totalweight           # normalizes all particle weights
+            
     def publish_particles(self, msg):
         particles_conv = []
         for p in self.particle_cloud:
@@ -310,7 +383,8 @@ class ParticleFilter:
         """ This method constantly updates the offset of the map and 
             odometry coordinate systems based on the latest results from
             the localizer """
-        p = PoseStamped(pose=convert_translation_rotation_to_pose(self.translation,self.rotation),
+        (translation, rotation) = convert_pose_inverse_transform(self.robot_pose)
+        p = PoseStamped(pose=convert_translation_rotation_to_pose(translation,rotation),
                         header=Header(stamp=msg.header.stamp,frame_id=self.base_frame))
         self.odom_to_map = self.tf_listener.transformPose(self.odom_frame, p)
         (self.translation, self.rotation) = convert_pose_inverse_transform(self.odom_to_map.pose)
@@ -326,6 +400,25 @@ class ParticleFilter:
                                           rospy.get_rostime(),
                                           self.odom_frame,
                                           self.map_frame)
+
+    def read_angle(self, angle):
+        '''
+        read the distance at an angle by averaging the readings
+            from the desired angle plus or minus 5 degrees disregarding
+            non-readins (avoids laser scanner glitches)
+        '''
+        pad = 5         #angles offset from the given that the laser will compare to
+        readings = []   #initializes readings
+        for i in range(2*pad):          #loops through pads around given angle
+            index = (angle - pad + i)%360   #calculates actual angle to read
+            dist = self.data[index]         #reads actual angle
+            if dist > 0:                    #if the distance is nonzero, append the reading to readings
+                readings.append(dist)
+        if readings != []:                  #if readings is not empty
+            avg = sum(readings)/len(readings) #computes average of all the readings
+            return avg                          #returns the average
+        else:
+            return  10 #if there were no valid readings, return 10 (larger than any readings we saw)
 
 if __name__ == '__main__':
     n = ParticleFilter()
