@@ -298,6 +298,7 @@ class ParticleFilter:
                       particle cloud around.  If this input is ommitted, the odometry will be used """
         if xy_theta == None:
             xy_theta = convert_pose_to_xy_and_theta(self.odom_pose.pose)
+<<<<<<< HEAD
         self.particle_cloud = []    #initializes particle cloud
 
         for i in range(300):    #creates 200 points distributed with a gaussian distribution
@@ -308,6 +309,10 @@ class ParticleFilter:
             y = stdy*randn() + xy_theta[1]      #creates random y coordinate centered around guess with a gaussian distribution
             theta = stdt*randn() + xy_theta[2]  #creates random theta centered around guess with a gaussian distribution
             self.particle_cloud.append(Particle(x,y,theta)) #appends random particle
+=======
+        self.particle_cloud = []
+        # TODO create particles
+>>>>>>> 998936e2a53a3fa1af05541b328e2ce1f6bc7c08
 
         self.normalize_particles()  #normalizes particles
         self.update_robot_pose()    #updates pose of robot
