@@ -87,7 +87,8 @@ if __name__ == '__main__':
 	while not rospy.is_shutdown():
 		cv2.imshow("mywin", np.hstack((cv2.resize(im,visualizer_size),V)))
 		key = cv2.waitKey(25)
-		if key != -1 and chr(key) == ' ':
+		if key != -1: #and chr(key) == ' ':
+			print key
 			# if you hit space bar, you should resest the sketch on the left
 			im =  255*np.ones(patch_size,dtype=np.uint8)
 			visualize_descriptor()
