@@ -3,29 +3,36 @@
 import numpy as np
 import cv2
 from math import *
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
 import time
-#import rospy
+import rospy
 
 class VisualOdometry():
+    '''track movement based on changing camera images'''
     def __init__(self):
-        self.cap = cv2.VideoCapture(0)
-        self.detector = cv2.FeatureDetector_create('SIFT')
-        self.extractor = cv2.DescriptorExtractor_create('SIFT')
-        self.matcher = cv2.BFMatcher()
-        #matcher.corner_threshold = thresh/1000.0
-        #matcher.ratio_threshold = ratio/100.0
-        self.ratio_threshold = 5
+        '''setup lots of variables'''
+        rospy.init_node('visual_odom')
+        self.frame = None
+        self.bridge = CvBridge()
+
+        rospy.Subscriber("/camera/image_raw", Image, self.process_image)
+
+        #self.cap = cv2.VideoCapture(0) #get vido capture
+        self.detector = cv2.FeatureDetector_create('SIFT') #setup feature detector with SIFT method
+        self.extractor = cv2.DescriptorExtractor_create('SIFT') #setup extractor
+        self.matcher = cv2.BFMatcher() #setup feature matcher
+        self.ratio_threshold = 0.7 #thresholding for features
         self.corner_threshold = 0.02
-        self.first = True
+        self.first = True #see go
 
     def get_key_points(self):
-        matches = self.matcher.knnMatch(self.last_ext, self.ext,k=2)
-
-        #for i in range(len(self.det)):
-        #        cv2.circle(self.frame,(int(self.det[i].pt[0]),int(self.det[i].pt[1])),2,(255,0,0),2)
+        '''find matching key points between the images'''
+        matches = self.matcher.knnMatch(self.last_ext, self.ext,k=2) #get matches using self.matcher
         return matches
 
     def key_point_filter(self, matches):
+        '''filter key points to remove bad matches'''
         good_matches = []
         for m,n in matches:
             # make sure the distance to the closest match is sufficiently better than the second closest
@@ -34,44 +41,52 @@ class VisualOdometry():
                 self.det[m.trainIdx].response > self.corner_threshold):
                 good_matches.append((m.queryIdx, m.trainIdx))
             
-        pts_old = np.zeros((len(good_matches),2))
+        pts_old = np.zeros((len(good_matches),2)) #init list of points
         pts_new = np.zeros((len(good_matches),2))
 
 
-        for idx in range(len(good_matches)):
+        for idx in range(len(good_matches)): #create list of old an new points (separated by image)
             match = good_matches[idx]
             pts_old[idx,:] = self.last_det[match[0]].pt
             pts_new[idx,:] = self.det[match[1]].pt
         return [pts_old, pts_new]
 
-    def get_movement(self, pts_new, pts_old):
-        pts_old = np.float32(pts_old)
+    def get_movement_fundamental(self, pts_new, pts_old):
+        '''get movement between images based on matched points'''
+        pts_old = np.float32(pts_old) #convert to floats
         pts_new = np.float32(pts_new)
-        F = cv2.findFundamentalMat(pts_old, pts_new, method=cv2.cv.CV_FM_LMEDS)
-        print F[0]
+        F = cv2.findFundamentalMat(pts_old, pts_new, method=cv2.cv.CV_FM_LMEDS) #find fundamental matrix :(
+        #print F[0]
+        #get epipolar lines through all of the key points
         lines = cv2.computeCorrespondEpilines(pts_old.reshape(-1, 1, 2), 1, F[0])
-        return lines.reshape(-1, 3)
+        return lines.reshape(-1, 3) #return the lines
 
+    def process_image(self, msg):
+        self.frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
 
     def go(self):
-        while(True):
+        ''' run our visual odometry implementation '''
+        while self.frame == None:
+            pass
+        while(True): #main loop
             # Capture frame-by-frame
-            ret, self.frame = self.cap.read()
+            #ret, self.frame = self.cap.read()
 
-            # Our operations on the frame come here
-            gray = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY) #convert to grey scale
 
-            #gray = np.float32(gray)
-            self.det = self.detector.detect(gray)
-            dc, self.ext = self.extractor.compute(gray, self.det)
+            self.det = self.detector.detect(gray) #detect corners
+            dc, self.ext = self.extractor.compute(gray, self.det) #extract corners
 
-            if not self.first:
-                matches = self.get_key_points()
-                [pts_old, pts_new] = self.key_point_filter(matches)
-                lines = self.get_movement(pts_old, pts_new)
+            #if count%10 == 0:
 
-                im = np.array(np.hstack((self.lastFrame,self.frame)))
+            if not self.first: #once there are two images
+                matches = self.get_key_points() #get matched key points
+                [pts_old, pts_new] = self.key_point_filter(matches) #filter out bad key points
+                lines = self.get_movement_fundamental(pts_old, pts_new) #calculate movement and get epipolar lines
 
+                im = np.array(np.hstack((self.lastFrame,self.frame))) #combine images
+
+                #plot key points, connecting lines, and epipolar lines
                 for i in range(min(len(pts_old),len(pts_new))):
                         y0 = -lines[i][2]/lines[i][1]
                         y1 = (-self.frame.shape[1]*lines[i][0]-lines[i][2])/lines[i][1]
@@ -83,16 +98,19 @@ class VisualOdometry():
 
                 # Display the resulting frame
                 cv2.imshow('frame', im)
+            else:
+                self.first = False
 
+            #set old values to current values for next loop
             self.last_ext = self.ext
             self.last_det = self.det
             self.lastFrame = self.frame
-            self.first = False
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            time.sleep(0.5)
+            if cv2.waitKey(1) & 0xFF == ord('q'): #exit on press of q
                 break
 
         # When everything done, release the capture
-        self.cap.release()
+        #self.cap.release()
         cv2.destroyAllWindows()
 
 if __name__ == '__main__':
