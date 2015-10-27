@@ -22,8 +22,8 @@ class VisualOdometry():
         self.detector = cv2.FeatureDetector_create('SIFT') #setup feature detector with SIFT method
         self.extractor = cv2.DescriptorExtractor_create('SIFT') #setup extractor
         self.matcher = cv2.BFMatcher() #setup feature matcher
-        self.ratio_threshold = 0.7 #thresholding for features
-        self.corner_threshold = 0.02
+        self.ratio_threshold = 0.6 #thresholding for features
+        self.corner_threshold = 0.01
         self.first = True #see go
 
     def get_key_points(self):
@@ -94,7 +94,7 @@ class VisualOdometry():
                             cv2.line(im,(0, int(y0)), (self.frame.shape[1], int(y1)), (0, 0, 255))
                         cv2.circle(im,(int(pts_old[i, 0]),int(pts_old[i,1])),2,(255,255,0),2)
                         cv2.circle(im,(int(pts_new[i,0]+self.frame.shape[1]),int(pts_new[i,1])),2,(255,0,0),2)
-                        cv2.line(im,(int(pts_old[i,0]),int(pts_old[i,1])),(int(pts_new[i,0]+self.frame.shape[1]),int(pts_new[i,1])),(0,255,0))
+                        #cv2.line(im,(int(pts_old[i,0]),int(pts_old[i,1])),(int(pts_new[i,0]+self.frame.shape[1]),int(pts_new[i,1])),(0,255,0))
 
                 # Display the resulting frame
                 cv2.imshow('frame', im)
