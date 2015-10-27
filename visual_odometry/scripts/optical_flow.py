@@ -194,8 +194,6 @@ class VisualOdometry():
         #quadrant 4 vector
         cv2.arrowedLine(self.frame, (int(self.frame.shape[1]*3/4), int(self.frame.shape[0]*3/4)), (int(self.frame.shape[1]*3/4+movement[3][0]), int(self.frame.shape[0]*3/4+movement[3][1])), (255, 0, 0), thickness=3)
 
-
-
     def go(self):
         ''' run our visual odometry implementation '''
         while self.frame == None: #does nothing if there is no previous frame
